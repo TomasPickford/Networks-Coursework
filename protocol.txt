@@ -1,0 +1,133 @@
+Protocol Documentation
+(Turn word-wrap on!)
+
+My protocol handles variable length messages by including 0, 1 or 2 headers that describe the buffer length of text fields in the message. To determine how many headers there are and how long they themselves are, the first character of all messages from client to server identifies the type of message.
+For example, n stands for change name. The server knows the structure of the change name request, so it knows that the next 2 characters are an integer encoded in utf-8. It uses this to determine the variable length of the last field (in this example, the new username). The server can then receive this many bytes and it knows it has taken in the entire name.
+
+Messages from the server to a client are slightly simpler. I designed the two programs such that the client would never need to interpret separate a message from the server; it would only ever need to display it. Therefore, there are no different types of message that the server can send, so no character is needed at the start to identify the type.
+All server messages start with 5 characters of an encoded integer, representing the length of the subsequent text message, that can vary in length.
+
+Examples of server-to-client messages:
+00022Welcome to the server!
+00030Tony renamed themselves to Tim
+00012Tim: hi guys
+00046You cannot send a private message to yourself.
+
+If the server closes a client's connection, or a client quits and disconnects, a message of 0 bytes is sent to end the connection.
+
+Now I will describe all the client-to-server messages with the server's response.
+At the very end of this file is my explanation of my design choices.
+
+
+BROADCAST MESSAGE
+
+User Input:
+Any text not starting with a slash (/)
+Example:
+Hello
+
+Client Message:
+The message type is 'b' for broadcast.
+5 characters store an integer that represents the length of the message text.
+Example:
+b00005Hello
+
+Server Response:
+It adds the name of the user before the text and sends the entire string to all clients.
+5 characters store an integer that represents the length of this string.
+Example:
+00011Tony: Hello
+
+
+DIRECT MESSAGE
+
+User Input:
+/tell [username] [message]
+The two fields are delineated with a space (as usernames cannot contain spaces). 
+Example:
+/tell Jess a secret
+
+Client Message:
+The message type is 'd' for direct message.
+The next 2 characters store an integer representing the length of the recipient name.
+The next 5 characters store an integer representing the length of the message text.
+After these are two strings. Their respective lengths are described by the previous two fields.
+
+Example:
+d0400008Jessa secret
+
+Server Response:
+It prefixes the text message with the sender's name followed by the recipient's name.
+It sends this only to the sender and the recipient.
+The first 5 characters indicate the length of the message.
+Example:
+00021Tony > Jess: a secret
+
+
+RENAME
+
+User Input:
+/name [new username]
+Example:
+/name Tim
+
+Client Message:
+The message type is 'n' for name.
+The next 2 characters store an integer representing the length of the new username.
+Then follows the username.
+Example:
+n03Tim
+
+Server Response:
+The client does not need to know what its name is, so there is no special message to update this.
+Rather, the server broadcasts to all users to notify them of the change.
+If the name change request was denied, then only that user would receive a message to tell them so.
+The first 5 characters indicate the length of this message.
+Example:
+00030Tony renamed themselves to Tim
+
+
+USER LIST
+
+User Input:
+Only the command /users. There are no arguments for this command.
+Example:
+/users
+
+Client Message:
+The message type is 'u' for user list.
+The client only sends this 1 character. 
+Example:
+u
+
+Server Response:
+The server responds directly to that one client with a text message (spanning multiple lines).
+The first 5 characters indicate the length of this message.
+Example:
+00038Connected Users:\nTony\nJess\nMarkus\n
+
+
+HELP
+
+User Input:
+Only the command /help. There are no arguments for this command.
+Example:
+/help
+
+Client Message:
+The message type is 'h' for help.
+The client only sends this 1 character. 
+Example:
+h
+
+Server Response:
+The server responds directly to that one client with the entire help dialouge in one message.
+The first 5 characters indicate the length of this message.
+Example (abdriged):
+00340\n\nHELP\nTo use a command, start your message with a slash (/).\nTo broa[...]
+
+
+
+Rationale for the design of my protocol:
+
+It was important to allow messages of any (reasonable) length, so it was necessary to have a field to describe this length (so that the recipient of the message knows how many bytes to receive). However, some parts of the message have to be of a fixed length, like the buffer headers that describe the length of following text sequences. Even with these, I tried to minimise the amount of data sent by only including the fields relevant to the message. For example, only a single character is send for the help request. When the buffer headers are included, they add very little to the message's length because they are only 2 (for the name buffer) or 5 (for the text buffer) characters long. I also designed the protocol to be as simple as possible, and that is why messages from the server are all of the same format (but still variable length).
